@@ -1,0 +1,3 @@
+@echo off
+echo Starting Serie A Dashboard...
+streamlit run app.py
