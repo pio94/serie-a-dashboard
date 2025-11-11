@@ -67,17 +67,15 @@ def load_matches():
     return df
 
 @st.cache_data(ttl=3600)
-def load_player_data(player_name):
-    """Load player goal data from CSV in the data/ folder (same as serie_a.db)."""
-    data_dir = get_data_dir()  # Use EXACT same path function as database
+def load_player_goals():
+    """Load player goal data from the database (same as standings and matches)."""
+    engine = get_engine()  # Use the exact same database connection
     
-    # Convert player name to filename format: "Lautaro Martinez" -> "lautaro_martinez_goals.csv"
-    player_file = data_dir / f"{player_name.lower().replace(' ', '_')}_goals.csv"
-    
-    if player_file.exists():
-        df = pd.read_csv(player_file)
+    try:
+        df = pd.read_sql("SELECT * FROM player_goals", engine)
         return df
-    else:
+    except Exception as e:
+        # Table doesn't exist yet
         return None
 
 # ===============================================================
@@ -408,41 +406,41 @@ def show_inter_stats_app():
         index=0
     )
     
-    # Load player data - pass the actual player name, function will handle conversion
-    player_data = load_player_data(selected_player)
+    # Load ALL player data from database
+    all_player_data = load_player_goals()
     
-    if player_data is None:
-        # Show exactly where we're looking
-        data_dir = get_data_dir()
-        expected_file = data_dir / f"{selected_player.lower().replace(' ', '_')}_goals.csv"
-        
-        st.error(f"❌ No data found for {selected_player}")
-        st.info(f"📁 Looking for: `{expected_file}`")
-        st.info(f"📁 Data directory: `{data_dir}`")
-        
-        # Check if data directory exists
-        if not data_dir.exists():
-            st.warning(f"⚠️ Data directory does not exist: `{data_dir}`")
-        else:
-            st.success(f"✅ Data directory exists: `{data_dir}`")
-            # List what's in the data directory
-            files = list(data_dir.glob("*"))
-            st.write("Files in data directory:", [f.name for f in files])
-        
+    if all_player_data is None:
+        st.error(f"❌ No player data found in database")
+        st.info("📁 Looking for table: `player_goals` in `data/serie_a.db`")
         st.markdown("### To fetch player data:")
         st.code("""
-# Option 1: Run from scripts/Inter folder
-cd scripts/Inter
-python scrape_lautaro.py
-
-# Option 2: Run from project root
-python scripts/Inter/scrape_lautaro.py
+# Run from project root
+python scripts/Inter/scrape_lautaro_db.py
         """, language="bash")
-        st.info("💡 The script will automatically save data to the data/ folder (same location as serie_a.db)")
+        st.info("💡 The script will save data to the same database as standings and matches")
         return
     
-    # Clean the data
-    player_data = player_data[player_data['Season'].notna()]
+    # Filter for selected player
+    player_data = all_player_data[all_player_data['player_name'] == selected_player]
+    
+    if len(player_data) == 0:
+        st.warning(f"⚠️ No data found for {selected_player}")
+        st.info(f"Available players in database: {all_player_data['player_name'].unique().tolist()}")
+        return
+    
+    # DEBUG: Show raw data info
+    with st.expander("🔍 Debug Info - Raw Data", expanded=False):
+        st.write(f"**Total rows loaded:** {len(player_data)}")
+        st.write(f"**Columns:** {list(player_data.columns)}")
+        st.write(f"**First 5 rows:**")
+        st.dataframe(player_data.head())
+        st.write(f"**Season column values:**")
+        st.write(player_data['season'].value_counts())
+        st.write(f"**Non-null counts:**")
+        st.write(player_data.notna().sum())
+    
+    # Clean the data - remove rows without a season
+    player_data = player_data[player_data['season'].notna()]
     
     st.markdown("---")
     
@@ -458,15 +456,15 @@ python scripts/Inter/scrape_lautaro.py
         st.metric("Total Goals", total_goals)
     
     with col2:
-        seasons = player_data['Season'].nunique()
+        seasons = player_data['season'].nunique()
         st.metric("Seasons", seasons)
     
     with col3:
-        competitions = player_data['Competition'].nunique()
+        competitions = player_data['competition'].nunique()
         st.metric("Competitions", competitions)
     
     with col4:
-        assisted_goals = player_data['Goal_assist'].notna().sum()
+        assisted_goals = player_data['goal_assist'].notna().sum()
         st.metric("Assisted Goals", assisted_goals)
     
     st.markdown("---")
@@ -485,15 +483,15 @@ python scripts/Inter/scrape_lautaro.py
     with tab1:
         st.subheader("Goals per Season")
         
-        season_goals = player_data.groupby('Season').size().reset_index(name='Goals')
-        season_goals = season_goals.sort_values('Season')
+        season_goals = player_data.groupby('season').size().reset_index(name='Goals')
+        season_goals = season_goals.sort_values('season')
         
         fig = px.bar(
             season_goals,
-            x='Season',
+            x='season',
             y='Goals',
             title=f"{selected_player}'s Goals per Season",
-            labels={'Goals': 'Number of Goals', 'Season': 'Season'},
+            labels={'Goals': 'Number of Goals', 'season': 'Season'},
             text='Goals'
         )
         fig.update_traces(
@@ -509,13 +507,13 @@ python scripts/Inter/scrape_lautaro.py
         
         # Show breakdown by competition
         st.subheader("Goals by Competition")
-        comp_season = player_data.groupby(['Season', 'Competition']).size().reset_index(name='Goals')
+        comp_season = player_data.groupby(['season', 'competition']).size().reset_index(name='Goals')
         
         fig2 = px.bar(
             comp_season,
-            x='Season',
+            x='season',
             y='Goals',
-            color='Competition',
+            color='competition',
             title=f"{selected_player}'s Goals by Competition and Season",
             labels={'Goals': 'Number of Goals'},
             barmode='stack'
@@ -533,20 +531,20 @@ python scripts/Inter/scrape_lautaro.py
         
         # Filter out blank/NA assists
         df_filtered = player_data[
-            player_data['Goal_assist'].notna() & 
-            (player_data['Goal_assist'] != "")
+            player_data['goal_assist'].notna() & 
+            (player_data['goal_assist'] != "")
         ]
         
         if len(df_filtered) > 0:
-            assist_counts = df_filtered.groupby('Goal_assist').size().reset_index(name='Assists')
+            assist_counts = df_filtered.groupby('goal_assist').size().reset_index(name='Assists')
             top_15_assists = assist_counts.sort_values(by='Assists', ascending=False).head(15)
             
             fig = px.bar(
                 top_15_assists,
-                x='Goal_assist',
+                x='goal_assist',
                 y='Assists',
                 title=f"Top 15 Players Who Assisted {selected_player}",
-                labels={'Goal_assist': 'Player', 'Assists': 'Number of Assists'},
+                labels={'goal_assist': 'Player', 'Assists': 'Number of Assists'},
                 text='Assists'
             )
             fig.update_traces(
@@ -570,7 +568,7 @@ python scripts/Inter/scrape_lautaro.py
                     hide_index=True,
                     use_container_width=True,
                     column_config={
-                        "Goal_assist": "Player",
+                        "goal_assist": "Player",
                         "Assists": st.column_config.NumberColumn("Assists", format="%d")
                     }
                 )
@@ -585,7 +583,7 @@ python scripts/Inter/scrape_lautaro.py
         
         with col1:
             # Home vs Away
-            venue_goals = player_data['Venue'].value_counts().reset_index()
+            venue_goals = player_data['venue'].value_counts().reset_index()
             venue_goals.columns = ['Venue', 'Goals']
             venue_goals['Venue'] = venue_goals['Venue'].map({'H': 'Home', 'A': 'Away'})
             
@@ -600,7 +598,7 @@ python scripts/Inter/scrape_lautaro.py
         
         with col2:
             # Goals by competition type
-            comp_goals = player_data['Competition'].value_counts().head(10).reset_index()
+            comp_goals = player_data['competition'].value_counts().head(10).reset_index()
             comp_goals.columns = ['Competition', 'Goals']
             
             fig = px.pie(
@@ -615,23 +613,23 @@ python scripts/Inter/scrape_lautaro.py
         st.subheader("Goals by Match Minute")
         
         # Clean minute data
-        player_data['Minute_clean'] = player_data['Minute'].str.replace("'", "").str.replace("+", "")
-        player_data['Minute_clean'] = pd.to_numeric(player_data['Minute_clean'], errors='coerce')
+        player_data['minute_clean'] = player_data['minute'].str.replace("'", "").str.replace("+", "")
+        player_data['minute_clean'] = pd.to_numeric(player_data['minute_clean'], errors='coerce')
         
-        minute_data = player_data[player_data['Minute_clean'].notna()].copy()
+        minute_data = player_data[player_data['minute_clean'].notna()].copy()
         
         if len(minute_data) > 0:
             # Create bins
             bins = [0, 15, 30, 45, 60, 75, 90, 120]
             labels = ['0-15', '16-30', '31-45', '46-60', '61-75', '76-90', '90+']
-            minute_data['Minute_range'] = pd.cut(
-                minute_data['Minute_clean'], 
+            minute_data['minute_range'] = pd.cut(
+                minute_data['minute_clean'], 
                 bins=bins, 
                 labels=labels,
                 include_lowest=True
             )
             
-            minute_dist = minute_data['Minute_range'].value_counts().sort_index().reset_index()
+            minute_dist = minute_data['minute_range'].value_counts().sort_index().reset_index()
             minute_dist.columns = ['Minute Range', 'Goals']
             
             fig = px.bar(
@@ -653,19 +651,19 @@ python scripts/Inter/scrape_lautaro.py
         # Show last 20 goals
         recent_goals = player_data.head(20).copy()
         
-        display_cols = ['Season', 'Competition', 'Date', 'Opponent', 'Venue', 'Minute', 'Goal_assist']
+        display_cols = ['season', 'competition', 'date', 'opponent', 'venue', 'minute', 'goal_assist']
         display_df = recent_goals[display_cols].copy()
-        display_df['Venue'] = display_df['Venue'].map({'H': 'Home', 'A': 'Away'})
+        display_df['venue'] = display_df['venue'].map({'H': 'Home', 'A': 'Away'})
         display_df.columns = ['Season', 'Competition', 'Date', 'Opponent', 'Venue', 'Minute', 'Assist By']
         
         st.dataframe(display_df, hide_index=True, use_container_width=True)
         
         # Season breakdown
         st.subheader("Season-by-Season Breakdown")
-        season_stats = player_data.groupby('Season').agg({
-            'Competition': 'count',
-            'Goal_assist': lambda x: x.notna().sum(),
-            'Venue': lambda x: (x == 'H').sum()
+        season_stats = player_data.groupby('season').agg({
+            'competition': 'count',
+            'goal_assist': lambda x: x.notna().sum(),
+            'venue': lambda x: (x == 'H').sum()
         }).reset_index()
         season_stats.columns = ['Season', 'Total Goals', 'Assisted Goals', 'Home Goals']
         season_stats['Away Goals'] = season_stats['Total Goals'] - season_stats['Home Goals']
