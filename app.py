@@ -97,7 +97,7 @@ def show_landing_page():
             st.markdown("""
             <div style='padding: 2rem; border-radius: 10px; background-color: #f0f7ff; border: 2px solid #0066cc;'>
                 <h2 style='color: #0066cc;'>⚫🔵 Inter Stats</h2>
-                <p>Deep dive into Inter Milan player goal data.</p>
+                <p>Deep dive into Inter player goal data.</p>
             </div>
             """, unsafe_allow_html=True)
             if st.button("🚀 Launch Inter Stats", use_container_width=True):
@@ -112,7 +112,7 @@ def show_inter_stats_app():
         st.session_state.app_selection = None
         st.rerun()
 
-    st.title("⚫🔵 Inter Milan Player Statistics")
+    st.title("⚫🔵 Inter Player Statistics")
     st.caption("Goal analysis and performance metrics for Inter players")
     st.markdown("---")
 
