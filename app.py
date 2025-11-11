@@ -120,24 +120,30 @@ def show_inter_stats_app():
     selected_player = st.selectbox("Choose Player", available_players, index=0)
 
     all_player_data = load_player_goals()
-    if all_player_data is None:
-        st.error("❌ No player data found in database")
+    if all_player_data is None or len(all_player_data) == 0:
+        st.error("❌ No player goal data found in database.")
+        st.info("💡 Run the following command to scrape Lautaro’s goals:")
+        st.code("python scripts/Inter/scrape_lautaro_db.py", language="bash")
         return
 
-    player_data = all_player_data[all_player_data["player_name"] == selected_player]
-    if len(player_data) == 0:
-        st.warning(f"No data found for {selected_player}")
-        return
+    player_data = all_player_data.query("player_name == @selected_player").copy()
 
-    # --- Only keep Inter-period goals ---
+    # --- Filter Inter period only (safety) ---
     if "inter_period" in player_data.columns:
         player_data = player_data[player_data["inter_period"] == 1]
 
-    player_data = player_data[player_data["season"].notna()]
+    # --- Convert and sort ---
+    player_data["date"] = pd.to_datetime(player_data["date"], errors="coerce")
+    player_data = player_data.sort_values(by=["season", "date"])
 
-    st.markdown("---")
+    if player_data.empty:
+        st.warning(f"No data found for {selected_player} in Inter period.")
+        return
+
+    # ===============================================================
+    # OVERVIEW METRICS
+    # ===============================================================
     st.header(f"📊 {selected_player} – Career Overview (Inter Only)")
-
     col1, col2, col3, col4 = st.columns(4)
     with col1:
         st.metric("Total Goals", len(player_data))
@@ -155,8 +161,7 @@ def show_inter_stats_app():
     # ===============================================================
     def classify_goal(row):
         """Infer match situation (Opening, Equalizer, Lead, etc.)"""
-        at_score = row.get("at_score")
-        result = row.get("result")
+        at_score, result = row.get("at_score"), row.get("result")
         if pd.isna(at_score) or ":" not in str(at_score):
             return "Unknown"
         try:
@@ -179,8 +184,7 @@ def show_inter_stats_app():
                 except Exception:
                     pass
             return "Goal While Leading"
-        else:
-            return "Unknown"
+        return "Unknown"
 
     player_data["goal_context"] = player_data.apply(classify_goal, axis=1)
 
