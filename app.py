@@ -14,6 +14,15 @@ st.set_page_config(
     layout="wide"
 )
 
+# Hide sidebar completely
+st.markdown("""
+    <style>
+        [data-testid="stSidebar"] {
+            display: none;
+        }
+    </style>
+""", unsafe_allow_html=True)
+
 # ===============================================================
 # SESSION STATE INITIALIZATION
 # ===============================================================
