@@ -62,10 +62,11 @@ def load_matches():
 
 @st.cache_data(ttl=3600)
 def load_player_data(player_name):
-    """Load player goal data from CSV."""
-    app_dir = Path(__file__).parent
-    data_dir = app_dir / "data"
+    """Load player goal data from CSV in the data/ folder (same as serie_a.db)."""
+    app_dir = Path(__file__).parent  # Root directory where app.py is
+    data_dir = app_dir / "data"      # data/ folder (same as serie_a.db location)
     
+    # Convert player name to filename format: "Lautaro Martinez" -> "lautaro_martinez_goals.csv"
     player_file = data_dir / f"{player_name.lower().replace(' ', '_')}_goals.csv"
     
     if player_file.exists():
@@ -104,8 +105,7 @@ def show_landing_page():
             <div style='padding: 2rem; border-radius: 10px; background-color: #f0f7ff; border: 2px solid #1f77b4;'>
                 <h2 style='color: #1f77b4; margin-top: 0;'>📊 Historical Standings</h2>
                 <p style='font-size: 1.1em; color: #333;'>
-                    Compare Serie A standings across multiple seasons (2009-2025).<br>
-                    Track team performance, analyze points distribution, and visualize championship races.
+                    Compare Serie A standings across multiple seasons (2009-2025)
                 </p>
             </div>
             """, unsafe_allow_html=True)
@@ -122,8 +122,8 @@ def show_landing_page():
             <div style='padding: 2rem; border-radius: 10px; background-color: #f0f7ff; border: 2px solid #0066cc;'>
                 <h2 style='color: #0066cc; margin-top: 0;'>⚫🔵 Inter Stats</h2>
                 <p style='font-size: 1.1em; color: #333;'>
-                    Deep dive into Inter Milan player statistics and goal analysis.<br>
-                    Explore goal distributions, assist providers, and performance trends.
+                    Inter stats, mainly gathered from various open sources.<br>
+                    
                 </p>
             </div>
             """, unsafe_allow_html=True)
