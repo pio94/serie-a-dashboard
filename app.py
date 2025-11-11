@@ -60,6 +60,20 @@ def load_matches():
     df['date'] = pd.to_datetime(df['date'])
     return df
 
+@st.cache_data(ttl=3600)
+def load_player_data(player_name):
+    """Load player goal data from CSV."""
+    app_dir = Path(__file__).parent
+    data_dir = app_dir / "data"
+    
+    player_file = data_dir / f"{player_name.lower().replace(' ', '_')}_goals.csv"
+    
+    if player_file.exists():
+        df = pd.read_csv(player_file)
+        return df
+    else:
+        return None
+
 # ===============================================================
 # LANDING PAGE
 # ===============================================================
@@ -102,19 +116,21 @@ def show_landing_page():
         
         st.markdown("<br>", unsafe_allow_html=True)
         
-        # Inter Stats App (Coming Soon)
+        # Inter Stats App
         with st.container():
             st.markdown("""
-            <div style='padding: 2rem; border-radius: 10px; background-color: #f5f5f5; border: 2px solid #999;'>
-                <h2 style='color: #666; margin-top: 0;'>⚫🔵 Inter Stats</h2>
-                <p style='font-size: 1.1em; color: #666;'>
-                    Deep dive into Inter Milan's performance metrics, player statistics, and historical achievements.
+            <div style='padding: 2rem; border-radius: 10px; background-color: #f0f7ff; border: 2px solid #0066cc;'>
+                <h2 style='color: #0066cc; margin-top: 0;'>⚫🔵 Inter Stats</h2>
+                <p style='font-size: 1.1em; color: #333;'>
+                    Deep dive into Inter Milan player statistics and goal analysis.<br>
+                    Explore goal distributions, assist providers, and performance trends.
                 </p>
-                <p style='font-style: italic; color: #999;'>🚧 Work in Progress</p>
             </div>
             """, unsafe_allow_html=True)
             
-            st.button("🔒 Coming Soon", use_container_width=True, disabled=True)
+            if st.button("🚀 Launch Inter Stats", use_container_width=True, type="primary"):
+                st.session_state.app_selection = "inter_stats"
+                st.rerun()
     
     # Footer
     st.markdown("<br><br><br>", unsafe_allow_html=True)
@@ -361,9 +377,288 @@ def show_standings_app():
         st.warning("⚠️ Please select at least one season to compare")
 
 # ===============================================================
+# INTER STATS APP
+# ===============================================================
+def show_inter_stats_app():
+    # Back button
+    if st.button("← Back to Home"):
+        st.session_state.app_selection = None
+        st.rerun()
+    
+    st.title("⚫🔵 Inter Milan Player Statistics")
+    st.caption("Goal analysis and performance metrics for Inter players")
+    st.markdown("---")
+    
+    # Available players
+    available_players = {
+        "Lautaro Martinez": "lautaro_martinez"
+    }
+    
+    # Player selector
+    st.subheader("Select Player")
+    selected_player = st.selectbox(
+        "Choose a player to analyze",
+        options=list(available_players.keys()),
+        index=0
+    )
+    
+    # Load player data
+    player_data = load_player_data(available_players[selected_player])
+    
+    if player_data is None:
+        st.error(f"❌ No data found for {selected_player}. Please run the scraping script first.")
+        st.info("💡 Run `python scripts/Inter/scrape_lautaro.py` to fetch the data.")
+        return
+    
+    # Clean the data
+    player_data = player_data[player_data['Season'].notna()]
+    
+    st.markdown("---")
+    
+    # ===============================================================
+    # OVERVIEW METRICS
+    # ===============================================================
+    st.header(f"📊 {selected_player} - Career Overview")
+    
+    col1, col2, col3, col4 = st.columns(4)
+    
+    with col1:
+        total_goals = len(player_data)
+        st.metric("Total Goals", total_goals)
+    
+    with col2:
+        seasons = player_data['Season'].nunique()
+        st.metric("Seasons", seasons)
+    
+    with col3:
+        competitions = player_data['Competition'].nunique()
+        st.metric("Competitions", competitions)
+    
+    with col4:
+        assisted_goals = player_data['Goal_assist'].notna().sum()
+        st.metric("Assisted Goals", assisted_goals)
+    
+    st.markdown("---")
+    
+    # ===============================================================
+    # VISUALIZATIONS
+    # ===============================================================
+    tab1, tab2, tab3, tab4 = st.tabs([
+        "Goals by Season",
+        "Top Assist Providers", 
+        "Goal Distribution",
+        "Detailed Stats"
+    ])
+    
+    # --- Tab 1: Goals by Season ---
+    with tab1:
+        st.subheader("Goals per Season")
+        
+        season_goals = player_data.groupby('Season').size().reset_index(name='Goals')
+        season_goals = season_goals.sort_values('Season')
+        
+        fig = px.bar(
+            season_goals,
+            x='Season',
+            y='Goals',
+            title=f"{selected_player}'s Goals per Season",
+            labels={'Goals': 'Number of Goals', 'Season': 'Season'},
+            text='Goals'
+        )
+        fig.update_traces(
+            marker_color='#0066cc',
+            textposition='outside'
+        )
+        fig.update_layout(
+            template="plotly_white",
+            height=500,
+            xaxis=dict(tickangle=45)
+        )
+        st.plotly_chart(fig, use_container_width=True)
+        
+        # Show breakdown by competition
+        st.subheader("Goals by Competition")
+        comp_season = player_data.groupby(['Season', 'Competition']).size().reset_index(name='Goals')
+        
+        fig2 = px.bar(
+            comp_season,
+            x='Season',
+            y='Goals',
+            color='Competition',
+            title=f"{selected_player}'s Goals by Competition and Season",
+            labels={'Goals': 'Number of Goals'},
+            barmode='stack'
+        )
+        fig2.update_layout(
+            template="plotly_white",
+            height=500,
+            xaxis=dict(tickangle=45)
+        )
+        st.plotly_chart(fig2, use_container_width=True)
+    
+    # --- Tab 2: Top Assist Providers ---
+    with tab2:
+        st.subheader("Top 15 Assist Providers")
+        
+        # Filter out blank/NA assists
+        df_filtered = player_data[
+            player_data['Goal_assist'].notna() & 
+            (player_data['Goal_assist'] != "")
+        ]
+        
+        if len(df_filtered) > 0:
+            assist_counts = df_filtered.groupby('Goal_assist').size().reset_index(name='Assists')
+            top_15_assists = assist_counts.sort_values(by='Assists', ascending=False).head(15)
+            
+            fig = px.bar(
+                top_15_assists,
+                x='Goal_assist',
+                y='Assists',
+                title=f"Top 15 Players Who Assisted {selected_player}",
+                labels={'Goal_assist': 'Player', 'Assists': 'Number of Assists'},
+                text='Assists'
+            )
+            fig.update_traces(
+                marker_color='#0066cc',
+                textposition='outside'
+            )
+            fig.update_layout(
+                template="plotly_white",
+                height=500,
+                xaxis=dict(tickangle=45)
+            )
+            st.plotly_chart(fig, use_container_width=True)
+            
+            # Show assist network
+            st.markdown("**Assist Partnerships**")
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                st.dataframe(
+                    top_15_assists.head(10),
+                    hide_index=True,
+                    use_container_width=True,
+                    column_config={
+                        "Goal_assist": "Player",
+                        "Assists": st.column_config.NumberColumn("Assists", format="%d")
+                    }
+                )
+        else:
+            st.info("No assist data available")
+    
+    # --- Tab 3: Goal Distribution ---
+    with tab3:
+        st.subheader("Goal Distribution Analysis")
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            # Home vs Away
+            venue_goals = player_data['Venue'].value_counts().reset_index()
+            venue_goals.columns = ['Venue', 'Goals']
+            venue_goals['Venue'] = venue_goals['Venue'].map({'H': 'Home', 'A': 'Away'})
+            
+            fig = px.pie(
+                venue_goals,
+                values='Goals',
+                names='Venue',
+                title='Goals: Home vs Away',
+                color_discrete_sequence=['#0066cc', '#87CEEB']
+            )
+            st.plotly_chart(fig, use_container_width=True)
+        
+        with col2:
+            # Goals by competition type
+            comp_goals = player_data['Competition'].value_counts().head(10).reset_index()
+            comp_goals.columns = ['Competition', 'Goals']
+            
+            fig = px.pie(
+                comp_goals,
+                values='Goals',
+                names='Competition',
+                title='Goals by Competition (Top 10)'
+            )
+            st.plotly_chart(fig, use_container_width=True)
+        
+        # Goals by minute range
+        st.subheader("Goals by Match Minute")
+        
+        # Clean minute data
+        player_data['Minute_clean'] = player_data['Minute'].str.replace("'", "").str.replace("+", "")
+        player_data['Minute_clean'] = pd.to_numeric(player_data['Minute_clean'], errors='coerce')
+        
+        minute_data = player_data[player_data['Minute_clean'].notna()].copy()
+        
+        if len(minute_data) > 0:
+            # Create bins
+            bins = [0, 15, 30, 45, 60, 75, 90, 120]
+            labels = ['0-15', '16-30', '31-45', '46-60', '61-75', '76-90', '90+']
+            minute_data['Minute_range'] = pd.cut(
+                minute_data['Minute_clean'], 
+                bins=bins, 
+                labels=labels,
+                include_lowest=True
+            )
+            
+            minute_dist = minute_data['Minute_range'].value_counts().sort_index().reset_index()
+            minute_dist.columns = ['Minute Range', 'Goals']
+            
+            fig = px.bar(
+                minute_dist,
+                x='Minute Range',
+                y='Goals',
+                title='Goals Distribution by Match Period',
+                labels={'Goals': 'Number of Goals'},
+                text='Goals'
+            )
+            fig.update_traces(marker_color='#0066cc', textposition='outside')
+            fig.update_layout(template="plotly_white", height=400)
+            st.plotly_chart(fig, use_container_width=True)
+    
+    # --- Tab 4: Detailed Stats ---
+    with tab4:
+        st.subheader("Recent Goals")
+        
+        # Show last 20 goals
+        recent_goals = player_data.head(20).copy()
+        
+        display_cols = ['Season', 'Competition', 'Date', 'Opponent', 'Venue', 'Minute', 'Goal_assist']
+        display_df = recent_goals[display_cols].copy()
+        display_df['Venue'] = display_df['Venue'].map({'H': 'Home', 'A': 'Away'})
+        display_df.columns = ['Season', 'Competition', 'Date', 'Opponent', 'Venue', 'Minute', 'Assist By']
+        
+        st.dataframe(display_df, hide_index=True, use_container_width=True)
+        
+        # Season breakdown
+        st.subheader("Season-by-Season Breakdown")
+        season_stats = player_data.groupby('Season').agg({
+            'Competition': 'count',
+            'Goal_assist': lambda x: x.notna().sum(),
+            'Venue': lambda x: (x == 'H').sum()
+        }).reset_index()
+        season_stats.columns = ['Season', 'Total Goals', 'Assisted Goals', 'Home Goals']
+        season_stats['Away Goals'] = season_stats['Total Goals'] - season_stats['Home Goals']
+        season_stats = season_stats.sort_values('Season', ascending=False)
+        
+        st.dataframe(
+            season_stats,
+            hide_index=True,
+            use_container_width=True,
+            column_config={
+                "Season": "Season",
+                "Total Goals": st.column_config.NumberColumn("Total Goals", format="%d"),
+                "Assisted Goals": st.column_config.NumberColumn("Assisted Goals", format="%d"),
+                "Home Goals": st.column_config.NumberColumn("Home Goals", format="%d"),
+                "Away Goals": st.column_config.NumberColumn("Away Goals", format="%d")
+            }
+        )
+
+# ===============================================================
 # MAIN APP ROUTER
 # ===============================================================
 if st.session_state.app_selection is None:
     show_landing_page()
 elif st.session_state.app_selection == "standings":
     show_standings_app()
+elif st.session_state.app_selection == "inter_stats":
+    show_inter_stats_app()
