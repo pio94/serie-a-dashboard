@@ -105,7 +105,8 @@ def show_landing_page():
             <div style='padding: 2rem; border-radius: 10px; background-color: #f0f7ff; border: 2px solid #1f77b4;'>
                 <h2 style='color: #1f77b4; margin-top: 0;'>📊 Historical Standings</h2>
                 <p style='font-size: 1.1em; color: #333;'>
-                    Compare Serie A standings across multiple seasons (2009-2025)
+                    Compare Serie A standings across multiple seasons (2009-2025).<br>
+                    Track team performance, analyze points distribution, and visualize championship races.
                 </p>
             </div>
             """, unsafe_allow_html=True)
@@ -122,8 +123,8 @@ def show_landing_page():
             <div style='padding: 2rem; border-radius: 10px; background-color: #f0f7ff; border: 2px solid #0066cc;'>
                 <h2 style='color: #0066cc; margin-top: 0;'>⚫🔵 Inter Stats</h2>
                 <p style='font-size: 1.1em; color: #333;'>
-                    Inter stats, mainly gathered from various open sources.<br>
-                    
+                    Deep dive into Inter Milan player statistics and goal analysis.<br>
+                    Explore goal distributions, assist providers, and performance trends.
                 </p>
             </div>
             """, unsafe_allow_html=True)
@@ -389,21 +390,21 @@ def show_inter_stats_app():
     st.caption("Goal analysis and performance metrics for Inter players")
     st.markdown("---")
     
-    # Available players
-    available_players = {
-        "Lautaro Martinez": "lautaro_martinez"
-    }
+    # Available players - just list the names, no need to pre-convert
+    available_players = [
+        "Lautaro Martinez"
+    ]
     
     # Player selector
     st.subheader("Select Player")
     selected_player = st.selectbox(
         "Choose a player to analyze",
-        options=list(available_players.keys()),
+        options=available_players,
         index=0
     )
     
-    # Load player data
-    player_data = load_player_data(available_players[selected_player])
+    # Load player data - pass the actual player name, function will handle conversion
+    player_data = load_player_data(selected_player)
     
     if player_data is None:
         st.error(f"❌ No data found for {selected_player}. Please run the scraping script first.")
