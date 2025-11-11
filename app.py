@@ -169,7 +169,7 @@ def show_inter_stats_app():
         elif team_goals < opp_goals:
             return "Equalizer"
         elif team_goals == opp_goals:
-            return "Go-Ahead Goal"
+            return "In vantaggio dopo un pareggio"
         elif team_goals > opp_goals:
             if isinstance(result, str) and ":" in result:
                 try:
