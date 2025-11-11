@@ -1,269 +1,140 @@
+"""
+Main Streamlit app for Serie A Dashboard.
+
+The Lautaro Martínez player statistics page is currently
+marked as "Work in progress" while goal data and context
+variables are being revalidated.
+"""
+
 import streamlit as st
 import pandas as pd
 from sqlalchemy import create_engine
-import plotly.express as px
-import plotly.graph_objects as go
 from pathlib import Path
 
-# ===============================================================
-# PAGE CONFIG
-# ===============================================================
-st.set_page_config(
-    page_title="Serie A Analytics",
-    page_icon="⚽",
-    layout="wide"
-)
-
-# Hide sidebar completely
-st.markdown("""
-    <style>
-        [data-testid="stSidebar"] {
-            display: none;
-        }
-    </style>
-""", unsafe_allow_html=True)
 
 # ===============================================================
-# DATABASE CONNECTION
+# Database connection helper
 # ===============================================================
-def get_data_dir():
-    app_dir = Path(__file__).parent
-    data_dir = app_dir / "data"
-    return data_dir
-
-@st.cache_resource
 def get_engine():
-    data_dir = get_data_dir()
-    db_path = data_dir / "serie_a.db"
+    """Return SQLAlchemy engine for the Serie A database."""
+    project_root = Path(__file__).resolve().parents[1]
+    db_path = project_root / "data" / "serie_a.db"
     if not db_path.exists():
-        st.error(f"❌ Database not found at: {db_path}")
+        st.error(f"❌ Database not found at {db_path}")
         st.stop()
     return create_engine(f"sqlite:///{db_path}")
 
-# ===============================================================
-# DATA LOADERS
-# ===============================================================
-@st.cache_data(ttl=3600)
-def load_standings():
-    engine = get_engine()
-    return pd.read_sql("SELECT * FROM standings", engine)
-
-@st.cache_data(ttl=3600)
-def load_matches():
-    engine = get_engine()
-    df = pd.read_sql("SELECT * FROM matches", engine)
-    df["date"] = pd.to_datetime(df["date"])
-    return df
-
-@st.cache_data(ttl=3600)
-def load_player_goals():
-    engine = get_engine()
-    try:
-        df = pd.read_sql("SELECT * FROM player_goals", engine)
-        return df
-    except Exception:
-        return None
 
 # ===============================================================
-# LANDING PAGE
+# Home Page
 # ===============================================================
-def show_landing_page():
-    st.markdown("<br>", unsafe_allow_html=True)
-    col1, col2, col3 = st.columns([1, 2, 1])
+def show_home():
+    st.title("⚽ Serie A Analytics Dashboard")
+    st.markdown("Explore Inter Milan player performance, match data, and more.")
+    st.markdown("---")
+
+    col1, col2 = st.columns(2)
+
+    with col1:
+        st.subheader("🏟️ Serie A Standings")
+        st.markdown("Check the latest table and points by team.")
+        if st.button("View Standings"):
+            st.session_state.app_selection = "standings"
+            st.rerun()
+
     with col2:
-        st.markdown("""
-        <h1 style='text-align: center; color: #1f77b4;'>⚽ Serie A Analytics Hub</h1>
-        <p style='text-align: center; font-size: 1.2em; color: #666;'>
-            Explore historical data and team statistics
-        </p>
-        """, unsafe_allow_html=True)
+        st.subheader("⚫🔵 Inter Player Stats")
+        st.caption("🚧 Work in progress — data validation ongoing.")
+        st.markdown("Compare Lautaro Martínez's goals, minutes, and match context.")
+        if st.button("View Lautaro Stats"):
+            st.session_state.app_selection = "inter_stats"
+            st.rerun()
 
-    st.markdown("<br><br>", unsafe_allow_html=True)
-    col1, col2, col3 = st.columns([1, 2, 1])
-    with col2:
-        with st.container():
-            st.markdown("""
-            <div style='padding: 2rem; border-radius: 10px; background-color: #f0f7ff; border: 2px solid #1f77b4;'>
-                <h2 style='color: #1f77b4;'>📊 Historical Standings</h2>
-                <p>Compare Serie A standings across multiple seasons.</p>
-            </div>
-            """, unsafe_allow_html=True)
-            if st.button("🚀 Launch Historical Standings", use_container_width=True):
-                st.session_state.app_selection = "standings"
-                st.rerun()
-
-        st.markdown("<br>", unsafe_allow_html=True)
-        with st.container():
-            st.markdown("""
-            <div style='padding: 2rem; border-radius: 10px; background-color: #f0f7ff; border: 2px solid #0066cc;'>
-                <h2 style='color: #0066cc;'>⚫🔵 Inter Stats</h2>
-                <p>Deep dive into Inter player goal data.</p>
-            </div>
-            """, unsafe_allow_html=True)
-            if st.button("🚀 Launch Inter Stats", use_container_width=True):
-                st.session_state.app_selection = "inter_stats"
-                st.rerun()
 
 # ===============================================================
-# INTER STATS APP
+# Standings Page
 # ===============================================================
-def show_inter_stats_app():
+def show_standings():
     if st.button("← Back to Home"):
         st.session_state.app_selection = None
         st.rerun()
 
-    st.title("⚫🔵 Inter Player Statistics")
-    st.caption("Goal analysis and performance metrics for Inter players")
-    st.markdown("---")
+    st.title("🏆 Serie A Standings")
 
-    available_players = ["Lautaro Martinez"]
-    selected_player = st.selectbox("Choose Player", available_players, index=0)
-
-    all_player_data = load_player_goals()
-    if all_player_data is None or len(all_player_data) == 0:
-        st.error("❌ No player goal data found in database.")
-        st.info("💡 Run the following command to scrape Lautaro’s goals:")
-        st.code("python scripts/Inter/scrape_lautaro_db.py", language="bash")
-        return
-
-    player_data = all_player_data.query("player_name == @selected_player").copy()
-
-    # --- Filter Inter period only (safety) ---
-    if "inter_period" in player_data.columns:
-        player_data = player_data[player_data["inter_period"] == 1]
-
-    # --- Convert and sort ---
-    player_data["date"] = pd.to_datetime(player_data["date"], errors="coerce")
-    player_data = player_data.sort_values(by=["season", "date"])
-
-    if player_data.empty:
-        st.warning(f"No data found for {selected_player} in Inter period.")
-        return
-
-    # ===============================================================
-    # OVERVIEW METRICS
-    # ===============================================================
-    st.header(f"📊 {selected_player} – Career Overview (Inter Only)")
-    col1, col2, col3, col4 = st.columns(4)
-    with col1:
-        st.metric("Total Goals", len(player_data))
-    with col2:
-        st.metric("Seasons", player_data["season"].nunique())
-    with col3:
-        st.metric("Competitions", player_data["competition"].nunique())
-    with col4:
-        st.metric("Assisted Goals", player_data["goal_assist"].notna().sum())
-
-    st.markdown("---")
-
-    # ===============================================================
-    # GOAL CONTEXT CLASSIFICATION
-    # ===============================================================
-    def classify_goal(row):
-        """Infer match situation (Opening, Equalizer, Lead, etc.)"""
-        at_score, result = row.get("at_score"), row.get("result")
-        if pd.isna(at_score) or ":" not in str(at_score):
-            return "Unknown"
-        try:
-            team_goals, opp_goals = map(int, at_score.split(":"))
-        except Exception:
-            return "Unknown"
-
-        if team_goals == 0 and opp_goals == 0:
-            return "Opening Goal"
-        elif team_goals < opp_goals:
-            return "Equalizer"
-        elif team_goals == opp_goals:
-            return "In vantaggio dopo un pareggio"
-        elif team_goals > opp_goals:
-            if isinstance(result, str) and ":" in result:
-                try:
-                    final_team, final_opp = map(int, result.split(":"))
-                    if final_team < final_opp:
-                        return "Consolation Goal"
-                except Exception:
-                    pass
-            return "Goal While Leading"
-        return "Unknown"
-
-    player_data["goal_context"] = player_data.apply(classify_goal, axis=1)
-
-    # ===============================================================
-    # VISUAL TABS
-    # ===============================================================
-    tab1, tab2, tab3 = st.tabs(["Goals by Season", "Assist Providers", "Goal Distribution"])
-
-    # --- Tab 1: Goals per season ---
-    with tab1:
-        season_goals = player_data.groupby("season").size().reset_index(name="Goals")
-        fig = px.bar(
-            season_goals, x="season", y="Goals",
-            title=f"{selected_player}'s Goals per Season (Inter)",
-            text="Goals", color_discrete_sequence=["#0066cc"]
-        )
-        fig.update_layout(template="plotly_white", height=450)
-        st.plotly_chart(fig, use_container_width=True)
-
-    # --- Tab 2: Top assists ---
-    with tab2:
-        df_assists = player_data[
-            player_data["goal_assist"].notna() & (player_data["goal_assist"] != "")
-        ]
-        if len(df_assists) > 0:
-            assists = df_assists.groupby("goal_assist").size().reset_index(name="Count")
-            top15 = assists.sort_values("Count", ascending=False).head(15)
-            fig = px.bar(top15, x="goal_assist", y="Count", title="Top Assist Providers",
-                         text="Count", color_discrete_sequence=["#0066cc"])
-            fig.update_traces(textposition="outside")
-            st.plotly_chart(fig, use_container_width=True)
+    try:
+        engine = get_engine()
+        df = pd.read_sql("SELECT * FROM league_standings", engine)
+        if not df.empty:
+            st.dataframe(df)
         else:
-            st.info("No assist data available")
+            st.warning("No standings data found in the database.")
+    except Exception as e:
+        st.error(f"Error loading standings: {e}")
 
-    # --- Tab 3: Goal distribution and context ---
-    with tab3:
-        col1, col2 = st.columns(2)
-
-        with col1:
-            st.subheader("🏠 Venue Distribution")
-            venue = player_data["venue"].map({"H": "Home", "A": "Away"}).value_counts().reset_index()
-            venue.columns = ["Venue", "Goals"]
-            fig = px.pie(venue, names="Venue", values="Goals",
-                         color_discrete_sequence=["#0066cc", "#87CEEB"])
-            st.plotly_chart(fig, use_container_width=True)
-
-        with col2:
-            st.subheader("🎯 Goal Context (Match Situation)")
-            ctx = player_data["goal_context"].value_counts().reset_index()
-            ctx.columns = ["Context", "Goals"]
-            fig = px.pie(ctx, names="Context", values="Goals",
-                         color_discrete_sequence=px.colors.qualitative.Set3)
-            st.plotly_chart(fig, use_container_width=True)
-
-        st.subheader("🕒 Goals by Match Minute")
-        player_data["minute_clean"] = player_data["minute"].str.replace("'", "").str.replace("+", "")
-        player_data["minute_clean"] = pd.to_numeric(player_data["minute_clean"], errors="coerce")
-
-        minute_data = player_data[player_data["minute_clean"].notna()]
-        bins = [0, 15, 30, 45, 60, 75, 90, 120]
-        labels = ["0-15", "16-30", "31-45", "46-60", "61-75", "76-90", "90+"]
-        minute_data["minute_range"] = pd.cut(minute_data["minute_clean"], bins=bins, labels=labels)
-        minute_dist = minute_data["minute_range"].value_counts().sort_index().reset_index()
-        minute_dist.columns = ["Minute Range", "Goals"]
-        fig = px.bar(minute_dist, x="Minute Range", y="Goals",
-                     title="Goals by Match Period", text="Goals",
-                     color_discrete_sequence=["#0066cc"])
-        fig.update_layout(template="plotly_white", height=400)
-        st.plotly_chart(fig, use_container_width=True)
 
 # ===============================================================
-# MAIN ROUTER
+# Lautaro Martínez Page (Work in Progress)
 # ===============================================================
-if "app_selection" not in st.session_state:
-    st.session_state.app_selection = None
+def show_inter_stats_app():
+    """Temporarily disable player stats while validating numbers."""
+    if st.button("← Back to Home"):
+        st.session_state.app_selection = None
+        st.rerun()
 
-if st.session_state.app_selection is None:
-    show_landing_page()
-elif st.session_state.app_selection == "standings":
-    st.write("📊 Standings app (unchanged).")
-elif st.session_state.app_selection == "inter_stats":
-    show_inter_stats_app()
+    st.title("⚫🔵 Inter Milan Player Statistics")
+    st.caption("🚧 Work in progress — data validation ongoing.")
+    st.markdown("---")
+
+    st.info("""
+    We're currently improving:
+    - Goal event parsing and match context classification  
+    - Season alignment and pre-/post-Inter filtering  
+    - Aggregated stats across Serie A, Coppa Italia, and Europe  
+
+    Please check back soon for the updated version.
+    """)
+
+    # Optional: show recent data sample
+    try:
+        engine = get_engine()
+        df = pd.read_sql(
+            "SELECT * FROM player_goals WHERE player_name = 'Lautaro Martinez' ORDER BY date DESC",
+            engine
+        )
+        if not df.empty:
+            st.write("### Latest goal entries")
+            st.dataframe(df.head(10))
+        else:
+            st.warning("No goal data found for Lautaro Martínez in the database.")
+    except Exception as e:
+        st.error(f"Database error: {e}")
+
+
+# ===============================================================
+# Main Navigation
+# ===============================================================
+def main():
+    if "app_selection" not in st.session_state:
+        st.session_state.app_selection = None
+
+    st.sidebar.title("⚽ Navigation")
+    choice = st.sidebar.radio(
+        "Go to:",
+        ("Home", "Standings", "Inter Player Stats"),
+        index=0 if st.session_state.app_selection is None else
+        ["Home", "Standings", "Inter Player Stats"].index(
+            "Inter Player Stats" if st.session_state.app_selection == "inter_stats"
+            else st.session_state.app_selection
+        )
+    )
+
+    if choice == "Home":
+        show_home()
+    elif choice == "Standings":
+        show_standings()
+    elif choice == "Inter Player Stats":
+        show_inter_stats_app()
+
+
+if __name__ == "__main__":
+    main()
